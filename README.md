@@ -26,7 +26,7 @@ Run the comparison script:
 ```sh
 python compare.py
 ```
-Or open the [interactive notebook](test.ipynb) in Jupyter Lab
+Or open the [interactive notebook](compare.ipynb) in Jupyter Lab
 ```sh
 jupyter lab
 ```
