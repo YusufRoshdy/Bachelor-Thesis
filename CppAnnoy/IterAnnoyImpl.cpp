@@ -26,7 +26,6 @@ namespace annoy {
         indexes.resize(n_trees);
     }
 
-
     void Annoy::buildTree() {
         auto size = static_cast<int>(X.size());
         #pragma omp parallel for num_threads(n_jobs)
@@ -93,8 +92,7 @@ namespace annoy {
 
                 imbalance_ratio = split_imbalance(start_idx, s - 1, e - 1, end_idx);
                 if (imbalance_ratio >= 0.80) {
-                    // TODO: handle limiting the retry count so we don't go into an infinite loop
-                    // Currently I just make that node a leaf
+                    // Currently I just make that node a leaf, in the original they split it randomly
                     if (imbalance_flag > 3) {
                         imbalance_flag = 0;
                         node->is_leaf = true;
@@ -122,20 +120,14 @@ namespace annoy {
         }
     }
 
-    void Annoy::queryTree(const vector<double>& point, int k, vector<double>& distances,vector<int>&  points_indices) /* const */ {
-//        queryTree2(point, k, distances, points_indices);
-//        return;
-
-
-
-        //
+    void Annoy::queryTreeIterative(const vector<double>& point, int k, vector<double>& distances,vector<int>&  points_indices) /* const */ {
         auto start = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds;
         if (n_jobs > 1){
             vector<vector<int>> p_i(n_jobs);
             #pragma omp parallel for num_threads(n_jobs) schedule(dynamic)
             for(int i = 0; i < n_trees; i++){
-                _queryTree(point, indexes[i], trees[i], k, p_i[omp_get_thread_num()]);
+                _queryTreeIterative(point, indexes[i], trees[i], k, p_i[omp_get_thread_num()]);
             }
 
             for(int i = 0; i < n_jobs; i++){
@@ -144,7 +136,7 @@ namespace annoy {
         }
         else{
             for(int i = 0; i < n_trees; i++){
-                _queryTree(point, indexes[i], trees[i], k, points_indices);
+                _queryTreeIterative(point, indexes[i], trees[i], k, points_indices);
             }
         }
 
@@ -199,54 +191,121 @@ namespace annoy {
         }
     }
 
-//    int Annoy::_queryTree(const vector<double>& point, const vector<int>& index, const shared_ptr<Node> tree, int k, vector<int>& results)  {
-//        priority_queue<pair<double, shared_ptr<Node> > > q;
-//        q.push(make_pair(DBL_MAX, tree));
-//        vector<int> nns;
-//
-//        while (nns.size() < k*2 && !q.empty()) {
-//            const pair<double, shared_ptr<Node> >& top = q.top();
-//            double d = top.first;
-//            shared_ptr<Node> nd = top.second;
-//            q.pop();
-//
-//            int n_descendants = nd->end - nd->start;
-//
-//            if (nd->is_leaf) {
-//                if (nd->start > nd->end) continue; // empty leaf
-//                nns.insert(end(nns), index.begin() + nd->start, index.begin() + nd->end);
-//            }
-//            else {
-//                double dot_product = 0, margin = 0;
-//                for (int j = 0; j < point.size(); j++)
-//                    dot_product += nd->norm[j] * point[j];
-//
-//                margin = dot_product - nd->b;
-//
-//                if (dot_product <= nd->b) {
-////                    if (-margin < 0)
-////                        cout << "margin\n";
-//                    q.push( make_pair(min(d, -margin), nd->left) );
-//                    q.push( make_pair(min(d, margin), nd->right) );
-//                }else{
-////                    if (margin < 0)
-////                        cout << "margin\n";
-//                    q.push( make_pair(min(d, margin), nd->right) );
-//                    q.push( make_pair(min(d, -margin), nd->left) );
-//                }
-//
-//            }
-//        }
-//
-//        results.insert(end(results), nns.begin(), nns.end());
-//        return 0;
-//    }
+    void Annoy::queryTreeRecursive(const vector<double>& point, int k, vector<double>& distances,vector<int>&  points_indices) /* const */ {
+        auto start = std::chrono::system_clock::now();
+        std::chrono::duration<double> elapsed_seconds;
+        if (n_jobs > 1){
+            vector<vector<int>> p_i(n_jobs);
+            #pragma omp parallel for num_threads(n_jobs) schedule(dynamic)
+            for(int i = 0; i < n_trees; i++){
+                _queryTreeRecursive(point, indexes[i], trees[i], k, p_i[omp_get_thread_num()]);
+            }
+
+            for(int i = 0; i < n_jobs; i++){
+                points_indices.insert(end(points_indices), p_i[i].begin(), p_i[i].end());
+            }
+        }
+        else{
+            for(int i = 0; i < n_trees; i++){
+                _queryTreeRecursive(point, indexes[i], trees[i], k, points_indices);
+            }
+        }
+
+        auto end = std::chrono::system_clock::now();
+        elapsed_seconds = end-start;
+        cout << "\t\ttrees time: " << elapsed_seconds.count() << "s\n";
+
+        //e-5
+        vector<int>::iterator ip = unique(points_indices.begin(), points_indices.end());
+        points_indices.resize(distance(points_indices.begin(), ip));
+        distances.resize(points_indices.size());
 
 
 
-    void Annoy::queryTree2(const vector<double>& point, int k, vector<double>& distances,vector<int>&  points_indices) /* const */ {
-//        n_jobs = 1;
         //
+        start = std::chrono::system_clock::now();
+        #pragma omp parallel for num_threads(n_jobs) schedule(static)
+        for(int i = 0; i < points_indices.size(); i++) {
+            distances[i] = vector_distance(point, X[points_indices[i]]);
+        }
+        end = std::chrono::system_clock::now();
+        elapsed_seconds = end-start;
+        cout << "\t\tdistances time: " << elapsed_seconds.count() << "s\n";
+
+
+
+        // e-5
+        vector<pair<double, int>> pairs(points_indices.size());
+        #pragma omp parallel for num_threads(n_jobs) schedule(static)
+        for(int i = 0; i < points_indices.size(); i++){
+            pairs[i] = make_pair(distances[i], points_indices[i]);
+        }
+
+        //
+        start = std::chrono::system_clock::now();
+//        sort(execution::par_unseq, pairs.begin(), pairs.end()); // for parallel sort needs c++17
+        sort(pairs.begin(), pairs.end());
+        end = std::chrono::system_clock::now();
+        elapsed_seconds = end-start;
+        cout << "\t\tsort time: " << elapsed_seconds.count() << "s\n";
+
+        // e-5
+        #pragma omp parallel for num_threads(n_jobs) schedule(static)
+        for(int i = 0; i < points_indices.size(); i++){
+            distances[i] = pairs[i].first;
+            points_indices[i] = pairs[i].second;
+        }
+
+        if(points_indices.size() > k){
+            points_indices.resize(k);
+            distances.resize(k);
+        }
+    }
+
+    int Annoy::_queryTreeIterative(const vector<double>& point, const vector<int>& index, const shared_ptr<Node> tree, int k, vector<int>& results)  {
+        priority_queue<pair<double, shared_ptr<Node> > > q;
+        q.push(make_pair(DBL_MAX, tree));
+        vector<int> nns;
+
+        while (nns.size() < k*2 && !q.empty()) {
+            const pair<double, shared_ptr<Node> >& top = q.top();
+            double d = top.first;
+            shared_ptr<Node> nd = top.second;
+            q.pop();
+
+            int n_descendants = nd->end - nd->start;
+
+            if (nd->is_leaf) {
+                if (nd->start > nd->end) continue; // empty leaf
+                nns.insert(end(nns), index.begin() + nd->start, index.begin() + nd->end);
+            }
+            else {
+                double dot_product = 0, margin = 0;
+                for (int j = 0; j < point.size(); j++)
+                    dot_product += nd->norm[j] * point[j];
+
+                margin = dot_product - nd->b;
+
+                if (dot_product <= nd->b) {
+//                    if (-margin < 0)
+//                        cout << "margin\n";
+                    q.push( make_pair(min(d, -margin), nd->left) );
+                    q.push( make_pair(min(d, margin), nd->right) );
+                }else{
+//                    if (margin < 0)
+//                        cout << "margin\n";
+                    q.push( make_pair(min(d, margin), nd->right) );
+                    q.push( make_pair(min(d, -margin), nd->left) );
+                }
+
+            }
+        }
+
+        results.insert(end(results), nns.begin(), nns.end());
+        return 0;
+    }
+
+    void Annoy::queryTreeForest(const vector<double>& point, int k, vector<double>& distances,vector<int>&  points_indices) /* const */ {
         auto start = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed_seconds;
 
@@ -348,7 +407,7 @@ namespace annoy {
         }
     }
 
-    int Annoy::_queryTree(const vector<double>& point, const vector<int>& index, const shared_ptr<Node> tree, int k,vector<int>& results)  {
+    int Annoy::_queryTreeRecursive(const vector<double>& point, const vector<int>& index, const shared_ptr<Node> tree, int k,vector<int>& results)  {
         if (tree->is_leaf) {
             if (tree->start > tree->end) {
                 return 0; // empty leaf
@@ -362,19 +421,19 @@ namespace annoy {
             dot_product += tree->norm[j] * point[j];
 
         if (dot_product <= tree->b) {
-            auto leaves_size = _queryTree(point, index, tree->left, k, results);
+            auto leaves_size = _queryTreeRecursive(point, index, tree->left, k, results);
             if (leaves_size < k) {
                 int temp_k = k - leaves_size;
-                auto rightLeaves = _queryTree(point, index, tree->right, temp_k, results);
+                auto rightLeaves = _queryTreeRecursive(point, index, tree->right, temp_k, results);
                 leaves_size += rightLeaves;
             }
             return leaves_size;
         }
 
-        auto leaves_size = _queryTree(point, index, tree->right, k, results);
+        auto leaves_size = _queryTreeRecursive(point, index, tree->right, k, results);
         if (leaves_size < k) {
             int temp_k = k - leaves_size;
-            auto leftLeaves = _queryTree(point, index, tree->left, temp_k, results);
+            auto leftLeaves = _queryTreeRecursive(point, index, tree->left, temp_k, results);
             leaves_size += leftLeaves;
         }
         return leaves_size;

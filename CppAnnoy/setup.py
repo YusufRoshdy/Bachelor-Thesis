@@ -10,7 +10,6 @@ setup(
         sources=['IterAnnoy.pyx'],
         language="c++",
         extra_compile_args=['/openmp'],
-        # extra_link_args=['/openmp'],
     )),
     include_dirs=[numpy.get_include()],
     zip_safe=False,

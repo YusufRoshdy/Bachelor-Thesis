@@ -33,10 +33,12 @@ namespace annoy {
 
         void buildTree();
 
-        void queryTree(const std::vector<double>& point, int k, std::vector<double>& distances, std::vector<int>&  points_indices);
-        void queryTree2(const std::vector<double>& point, int k, std::vector<double>& distances, std::vector<int>&  points_indices);
+        void queryTreeRecursive(const std::vector<double>& point, int k, std::vector<double>& distances, std::vector<int>&  points_indices);
+        void queryTreeIterative(const std::vector<double>& point, int k, std::vector<double>& distances, std::vector<int>&  points_indices);
+        void queryTreeForest(const std::vector<double>& point, int k, std::vector<double>& distances, std::vector<int>&  points_indices);
 
-        int _queryTree(const std::vector<double>& point, const std::vector<int>& index, const std::shared_ptr<Node> tree, int k, std::vector<int>& results);
+        int _queryTreeRecursive(const std::vector<double>& point, const std::vector<int>& index, const std::shared_ptr<Node> tree, int k, std::vector<int>& results);
+        int _queryTreeIterative(const std::vector<double>& point, const std::vector<int>& index, const std::shared_ptr<Node> tree, int k, std::vector<int>& results);
     };
 }
 

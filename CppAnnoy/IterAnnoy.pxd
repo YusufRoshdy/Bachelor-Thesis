@@ -29,5 +29,7 @@ cdef extern from "IterAnnoy.h" namespace "annoy":
         string last
         Annoy(vector[vector[double]] &X, int, int, int) except +
         Node buildTree() except +
-        vector[int] queryTree(vector[double]& point, int k, vector[double]& distances, vector[int]&  points_indices) except +
+        vector[int] queryTreeRecursive(vector[double]& point, int k, vector[double]& distances, vector[int]&  points_indices) except +
+        vector[int] queryTreeIterative(vector[double]& point, int k, vector[double]& distances, vector[int]&  points_indices) except +
+        vector[int] queryTreeForest(vector[double]& point, int k, vector[double]& distances, vector[int]&  points_indices) except +
         vector[int] _queryTree(vector[double]& point, vector[int]& index, shared_ptr[Node] tree, int k) except +

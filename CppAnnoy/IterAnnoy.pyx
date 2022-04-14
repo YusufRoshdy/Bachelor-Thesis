@@ -25,11 +25,45 @@ cdef class PyAnnoy:
         return
 
     def query_tree(self, vector[double] X, int k=1, return_distance=False):
+        return
         cdef vector[double]  point = X
         cdef vector[double]  distances
         cdef vector[int]  points_indices
 
-        self.c_annoy.queryTree(point, k, distances, points_indices)
+        self.c_annoy.queryTreeRecursive(point, k, distances, points_indices)
+
+        if return_distance:
+            return [points_indices, distances]
+        return points_indices
+
+    def recursive_query(self, vector[double] X, int k=1, return_distance=False):
+        cdef vector[double]  point = X
+        cdef vector[double]  distances
+        cdef vector[int]  points_indices
+
+        self.c_annoy.queryTreeRecursive(point, k, distances, points_indices)
+
+        if return_distance:
+            return [points_indices, distances]
+        return points_indices
+
+    def iterative_query(self, vector[double] X, int k=1, return_distance=False):
+        cdef vector[double]  point = X
+        cdef vector[double]  distances
+        cdef vector[int]  points_indices
+
+        self.c_annoy.queryTreeIterative(point, k, distances, points_indices)
+
+        if return_distance:
+            return [points_indices, distances]
+        return points_indices
+
+    def forest_query(self, vector[double] X, int k=1, return_distance=False):
+        cdef vector[double]  point = X
+        cdef vector[double]  distances
+        cdef vector[int]  points_indices
+
+        self.c_annoy.queryTreeForest(point, k, distances, points_indices)
 
         if return_distance:
             return [points_indices, distances]
